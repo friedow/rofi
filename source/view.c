@@ -1159,7 +1159,103 @@ void rofi_view_handle_mouse_motion(RofiViewState *state, gint x, gint y,
   }
 }
 
-static WidgetTriggerActionResult textbox_button_trigger_action(
+void rofi_view_maybe_update(RofiViewState *state) {
+  if (rofi_view_get_completed(state)) {
+    // This menu is done.
+    rofi_view_finalize(state);
+    // If there a state. (for example error) reload it.
+    state = rofi_view_get_active();
+
+    // cleanup, if no more state to display.
+    if (state == NULL) {
+      // Quit main-loop.
+      rofi_quit_main_loop();
+      return;
+    }
+  }
+
+  // Update if requested.
+  if (state->refilter) {
+    rofi_view_refilter(state);
+  }
+  rofi_view_update(state, TRUE);
+  return;
+}
+
+/**
+ * Handle window configure event.
+ * Handles resizes.
+ */
+void rofi_view_temp_configure_notify(RofiViewState *state,
+                                     xcb_configure_notify_event_t *xce) {
+  if (xce->window == CacheState.main_window) {
+    if (state->x != xce->x || state->y != xce->y) {
+      state->x = xce->x;
+      state->y = xce->y;
+      widget_queue_redraw(WIDGET(state->main_window));
+    }
+    if (state->width != xce->width || state->height != xce->height) {
+      state->width = xce->width;
+      state->height = xce->height;
+
+      cairo_destroy(CacheState.edit_draw);
+      cairo_surface_destroy(CacheState.edit_surf);
+
+      xcb_free_pixmap(xcb->connection, CacheState.edit_pixmap);
+      CacheState.edit_pixmap = xcb_generate_id(xcb->connection);
+      xcb_create_pixmap(xcb->connection, depth->depth, CacheState.edit_pixmap,
+                        CacheState.main_window, state->width, state->height);
+
+      CacheState.edit_surf =
+          cairo_xcb_surface_create(xcb->connection, CacheState.edit_pixmap,
+                                   visual, state->width, state->height);
+      CacheState.edit_draw = cairo_create(CacheState.edit_surf);
+      g_debug("Re-size window based external request: %d %d", state->width,
+              state->height);
+      widget_resize(WIDGET(state->main_window), state->width, state->height);
+    }
+  }
+}
+
+/**
+ * Quit rofi on click (outside of view )
+ */
+void rofi_view_temp_click_to_exit(RofiViewState *state, xcb_window_t target) {
+  if ((CacheState.flags & MENU_NORMAL_WINDOW) == 0) {
+    if (target != CacheState.main_window) {
+      state->quit = TRUE;
+      state->retv = MENU_CANCEL;
+    }
+  }
+}
+
+void rofi_view_frame_callback(void) {
+  if (CacheState.repaint_source == 0) {
+    CacheState.count++;
+    g_debug("redraw %llu", CacheState.count);
+    CacheState.repaint_source =
+        g_idle_add_full(G_PRIORITY_HIGH_IDLE, rofi_view_repaint, NULL, NULL);
+  }
+}
+
+static int rofi_view_calculate_height(RofiViewState *state) {
+  if (CacheState.fullscreen == TRUE) {
+    return CacheState.mon.h;
+  }
+
+  RofiDistance h =
+      rofi_theme_get_distance(WIDGET(state->main_window), "height", 0);
+  unsigned int height = distance_get_pixel(h, ROFI_ORIENTATION_VERTICAL);
+  // If height is set, return it.
+  if (height > 0) {
+    return height;
+  }
+  // Autosize based on widgets.
+  widget *main_window = WIDGET(state->main_window);
+  return widget_get_desired_height(main_window, state->width);
+}
+
+WidgetTriggerActionResult textbox_button_trigger_action(
     widget *wid, MouseBindingMouseDefaultAction action, G_GNUC_UNUSED gint x,
     G_GNUC_UNUSED gint y, G_GNUC_UNUSED void *user_data) {
   RofiViewState *state = (RofiViewState *)user_data;

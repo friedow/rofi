@@ -29,6 +29,8 @@
 #define ROFI_VIEW_H
 
 #include "mode.h"
+#include "widgets/widget.h"
+#include <pango/pango.h>
 #include <xcb/xcb.h>
 /**
  * @defgroup View View
@@ -364,6 +366,11 @@ extern const struct _view_proxy *wayland_view_proxy;
 #endif
 
 void view_init(const struct _view_proxy *view_in);
+
+
+WidgetTriggerActionResult textbox_button_trigger_action(
+    widget *wid, MouseBindingMouseDefaultAction action, G_GNUC_UNUSED gint x,
+    G_GNUC_UNUSED gint y, G_GNUC_UNUSED void *user_data);
 
 /** @} */
 #endif
